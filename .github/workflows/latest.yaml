@@ -1,0 +1,24 @@
+name: latest
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  Build:
+    name: "latest"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: latest
+        shell: pwsh
+        run: |
+          ./entrypoint.ps1 build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
