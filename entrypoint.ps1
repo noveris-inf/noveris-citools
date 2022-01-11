@@ -89,7 +89,7 @@ Invoke-CIProfile -Name $Profile -Steps @{
         Dependencies = @("build")
         PostScript = {
             $owner = "noveris-inf"
-            $repo = "Noveris.CITools"
+            $repo = "noveris-citools"
 
             $releaseParams = @{
                 Owner = $owner
