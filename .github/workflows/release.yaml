@@ -5,7 +5,7 @@ on:
       - "v*"
 
 jobs:
-  Release:
+  release:
     name: "release"
     runs-on: ubuntu-latest
 

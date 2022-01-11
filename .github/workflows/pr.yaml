@@ -8,7 +8,7 @@ on:
       - main
 
 jobs:
-  Build:
+  pr:
     name: "pr"
     runs-on: ubuntu-latest
 
