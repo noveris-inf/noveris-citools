@@ -83,7 +83,10 @@ Invoke-CIProfile -Name $Profile -Steps @{
         }
     }
     pr = @{
-        Dependencies = @("lint", "build")
+        Dependencies = $("lint", "build")
+    }
+    latest = @{
+        Dependencies = $("lint", "build")
     }
     release = @{
         Dependencies = @("build")

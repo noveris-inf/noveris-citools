@@ -19,6 +19,6 @@ jobs:
       - name: latest
         shell: pwsh
         run: |
-          ./entrypoint.ps1 build
+          ./entrypoint.ps1 latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
