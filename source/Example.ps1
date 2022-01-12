@@ -5,43 +5,47 @@ param(
     [string]$Name
 )
 
-Remove-Module Noveris.CITools
+$ErrorActionPreference = "Stop"
+$InformationPreference = "Continue"
+Set-StrictMode -Version 2
+
+Remove-Module Noveris.CITools -EA SilentlyContinue
 Import-Module .\Noveris.CITools\Noveris.CITools.psm1
 
 Invoke-CIProfile -Name $Name -Verbose -steps @{
     build = @{
-        PreScript = {
-            Write-Information "build pre script"
-        }
-        PostScript = {
+        Script = {
             Write-Information "build post script"
         }
     }
     release = @{
-        PreScript = {
-            Write-Information "release pre script"
-        }
-        PostScript = {
+        Dependencies = $("build")
+        Script = {
             Write-Information "release post script"
         }
-        Dependencies = @("build", "other")
+    }
+    commit_release = @{
+        Dependencies = $("build", "release")
+        Script = {
+            Write-Information "post release commit"
+        }
     }
     pr = @{
-        PreScript = {
-            Write-Information "pr pre script"
-        }
-        PostScript = {
+        Dependencies = $("build")
+        Script = {
             Write-Information "pr post script"
         }
-        Dependencies = @("build")
     }
-    other = @{
-        PreScript = {
-            Write-Information "second pre script"
-        }
-        PostScript = {
-            Write-Information "second post script"
-        }
-        Dependencies = @("build", "release")
+    error1 = @{
+        Dependencies = $("error2", "release")
+    }
+    error2 = @{
+        Dependencies = $("error1", "build", "release")
+    }
+    error3 = @{
+        Dependencies = $("missing")
+    }
+    error4 = @{
+        Script = "test"
     }
 }

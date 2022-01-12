@@ -101,104 +101,119 @@ Function Invoke-CIProfile
 
     process
     {
-        $scripts = New-Object 'System.Collections.Generic.LinkedList[PSCustomObject]'
-        $components = New-Object 'System.Collections.Stack'
+        $components = New-Object 'System.Collections.Generic.Stack[string]'
 
-        $processedNames = New-Object 'System.Collections.Generic.HashSet[string]'
+        # Find all of the steps that can be reached by the initial step (i.e. steps in scope)
+        $scopeSteps = @{}
         $components.Push($Name)
         while ($components.Count -gt 0)
         {
-            $content = $components.Pop()
+            $stepName = $components.Pop()
 
             # Make sure we don't have empty content
-            if ($null -eq $content)
+            if ([string]::IsNullOrEmpty($stepName))
             {
                 Write-Error "Found null entry in list"
                 continue
             }
 
-            switch ($content.GetType().FullName)
+            # Check if this step exists
+            if ($Steps.Keys -notcontains $stepName)
             {
-                "System.String" {
-                    $name = [string]$content
-                    if ($Steps.Keys -notcontains $name)
-                    {
-                        Write-Error "Missing step ($name) in definition"
-                    }
-
-                    # Check if we've processed this name before
-                    if ($processedNames.Contains($name))
-                    {
-                        Write-Verbose ("Dependency ({0}) has already been processed" -f $name)
-                        continue
-                    }
-                    $processedNames.Add($name) | Out-Null
-
-                    Write-Verbose "Validating step $name"
-                    $step = [HashTable]($Steps[$name])
-
-                    # Add post scripts
-                    if ($step.Keys -contains "PostScript")
-                    {
-                        $components.Push([PSCustomObject]@{
-                            Name = "postscript_$name"
-                            Script = [ScriptBlock]($step["PostScript"])
-                        })
-                    }
-
-                    # Add names to stack (in reverse)
-                    if ($step.Keys -contains "Dependencies")
-                    {
-                        $list = ([string[]]($step["Dependencies"])) | ForEach-Object { $_ }
-                        [Array]::Reverse($list)
-                        $list | ForEach-Object { $components.Push($_) }
-                    }
-
-                    # Add pre scripts
-                    if ($step.Keys -contains "PreScript")
-                    {
-                        $components.Push([PSCustomObject]@{
-                            Name = "prescript_$name"
-                            Script = [ScriptBlock]($step["PreScript"])
-                        })
-                    }
-
-                    break
-                }
-
-                "System.Management.Automation.PSCustomObject" {
-                    $scripts.Add($content)
-                    break
-                }
-
-                default {
-                    Write-Error "Unknown type found in list"
-                    break
-                }
+                Write-Error "Missing step ($stepName) in definition"
             }
-        }
 
-        $executions = New-Object 'System.Collections.Generic.HashSet[string]'
-        foreach ($script in $scripts)
-        {
-            # Check if we've already run this script
-            if ($executions.Contains($script.Name))
+            # Check if we've processed this name before
+            if ($scopeSteps.Keys -contains $stepName)
             {
-                Write-Verbose ("Script ({0}) already run" -f $script.Name)
                 continue
             }
 
-            Write-Information ("******** Processing " + $script.Name)
+            # Get the step associated with this name
+            $step = [HashTable]($Steps[$stepName])
+
+            $newStep = [PSCustomObject]@{
+                Name = $stepName
+                Script = $null
+                Dependencies = $null
+            }
+            # Validate Script, if it exists
+            if ($step.Keys -contains "Script")
+            {
+                $newStep.Script = [ScriptBlock]($step["Script"])
+            }
+
+            # Validate dependencies, if they exist
+            if ($step.Keys -contains "Dependencies")
+            {
+                $newStep.Dependencies = [string[]]($step["Dependencies"])
+
+                # Add the dependencies to the components list
+                $newStep.Dependencies | ForEach-Object { $components.Push($_) }
+            }
+
+            # Add the step to scopeSteps
+            $scopeSteps[$stepName] = $newStep
+        }
+
+        # Create an execution order
+        $processedNames = New-Object 'System.Collections.Generic.HashSet[string]'
+        $executionOrder = New-Object 'System.Collections.Generic.List[PSCustomObject]'
+        while ($scopeSteps.Count -gt 0)
+        {
+            # Find a step that has its dependencies met or has no dependencies
+            $candidate = $null
+            foreach ($key in $scopeSteps.Keys)
+            {
+                $step = $scopeSteps[$key]
+
+                # Collect a list of blockers for this step
+                $blockers = $step.Dependencies | Where-Object {
+                    !$processedNames.Contains($_)
+                }
+
+                if (($blockers | Measure-Object).Count -gt 0)
+                {
+                    # Step has blockers, so can't be run yet
+                    continue
+                }
+
+                # Step has no blockers, so could be scheduled here
+                $candidate = $step
+                break
+            }
+
+            # If we couldn't find anything, abort
+            if ($null -eq $candidate)
+            {
+                Write-Error "Possible cyclical dependencies. Unable to determine execution order."
+            }
+
+            # Remove the step from the scope steps
+            $scopeSteps.Remove($candidate.Name)
+
+            # Add the step to the processed steps list
+            $processedNames.Add($candidate.Name) | Out-Null
+
+            # Add the item to the execution order
+            $executionOrder.Add($candidate)
+        }
+
+        Write-Information ("Execution order: " + ($executionOrder | ForEach-Object { $_.Name } | Join-String -Separator ", "))
+
+        foreach ($step in $executionOrder)
+        {
+            Write-Information ("******** Processing " + $step.Name)
             try {
 
-                & $script.Script *>&1 |
-                    Format-RecordAsString -DisplaySummary |
-                    Out-String -Stream
-                Write-Information ("******** Finished " + $script.Name)
+                if ($null -ne $step.Script)
+                {
+                    & $step.Script *>&1 |
+                        Format-RecordAsString -DisplaySummary |
+                        Out-String -Stream
+                }
+                Write-Information ("******** Finished " + $step.Name)
                 Write-Information ""
-
-                # Add the script to prevent further executions
-                $executions.Add($script.Name) | Out-Null
             } catch {
                 $ex = $_
 
@@ -401,17 +416,17 @@ Function Invoke-Native
         [switch]$IgnoreExitCode = $false,
 
         [Parameter(Mandatory=$false)]
-        [switch]$RedirectStderr = $false
+        [switch]$NoRedirectStderr = $false
     )
 
     process
     {
         $LASTEXITCODE = 0
-        if ($RedirectStderr)
+        if ($NoRedirectStderr)
         {
-            & $Script 2>&1 | Out-String -Stream
-        } else {
             & $Script | Out-String -Stream
+        } else {
+            & $Script 2>&1 | Out-String -Stream
         }
         $exitCode = $LASTEXITCODE
 
