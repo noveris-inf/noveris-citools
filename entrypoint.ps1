@@ -31,7 +31,7 @@ if ($UseLocalTools)
 {
     Import-Module ./source/Noveris.CITools/Noveris.CITools.psm1
 } else {
-    Import-Module -Name Noveris.CITools -RequiredVersion (Install-PSModuleWithSpec -Name Noveris.CITools -Major 0 -Minor 2)
+    Import-Module -Name Noveris.CITools -RequiredVersion (Install-PSModuleWithSpec -Name Noveris.CITools -Major 0 -Minor 3)
 }
 
 ########
@@ -45,7 +45,7 @@ $version
 # Build stage
 Invoke-CIProfile -Name $Profile -Steps @{
     lint = @{
-        PostScript = {
+        Script = {
             Use-PowershellGallery
             Install-Module PSScriptAnalyzer -Scope CurrentUser
             Import-Module PSScriptAnalyzer
@@ -58,7 +58,7 @@ Invoke-CIProfile -Name $Profile -Steps @{
         }
     }
     build = @{
-        PostScript = {
+        Script = {
             # Template PowerShell module definition
             Write-Information "Templating Noveris.CITools.psd1"
             Format-TemplateFile -Template source/Noveris.CITools.psd1.tpl -Target source/Noveris.CITools/Noveris.CITools.psd1 -Content @{
@@ -82,15 +82,15 @@ Invoke-CIProfile -Name $Profile -Steps @{
             Import-Module ./source/Noveris.CITools/Noveris.CITools.psm1
         }
     }
-    pr = @{
+    pr_main = @{
         Dependencies = $("lint", "build")
     }
-    latest = @{
+    latest_main = @{
         Dependencies = $("lint", "build")
     }
     release = @{
-        Dependencies = @("build")
-        PostScript = {
+        Dependencies = $("build")
+        Script = {
             $owner = "noveris-inf"
             $repo = "noveris-citools"
 

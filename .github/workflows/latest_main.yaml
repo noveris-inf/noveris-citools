@@ -1,15 +1,13 @@
-name: pr
+name: latest_main
 on:
+  workflow_dispatch:
   push:
-    branches-ignore:
-      - "*"
-  pull_request:
     branches:
       - main
 
 jobs:
-  pr:
-    name: "pr"
+  latest_main:
+    name: "latest"
     runs-on: ubuntu-latest
 
     steps:
@@ -18,7 +16,9 @@ jobs:
         with:
           submodules: true
 
-      - name: pr
+      - name: latest_main
         shell: pwsh
         run: |
-          ./entrypoint.ps1 pr
+          ./entrypoint.ps1 latest_main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
