@@ -421,14 +421,14 @@ Function Invoke-Native
 
     process
     {
-        $LASTEXITCODE = 0
+        $global:LASTEXITCODE = 0
         if ($NoRedirectStderr)
         {
             & $Script | Out-String -Stream
         } else {
             & $Script 2>&1 | Out-String -Stream
         }
-        $exitCode = $LASTEXITCODE
+        $exitCode = $global:LASTEXITCODE
 
         Write-Verbose "Script exited with code: $exitCode"
         if (!$IgnoreExitCode -and $ValidExitCodes -notcontains $exitCode)
