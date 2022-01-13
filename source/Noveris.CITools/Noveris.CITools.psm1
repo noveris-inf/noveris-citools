@@ -430,6 +430,7 @@ Function Invoke-Native
         }
         $exitCode = $LASTEXITCODE
 
+        Write-Verbose "Script exited with code: $exitCode"
         if (!$IgnoreExitCode -and $ValidExitCodes -notcontains $exitCode)
         {
             Write-Error "Invalid exit code returned: $exitCode"
