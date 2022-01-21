@@ -406,7 +406,11 @@ Function Invoke-Native
     param(
         [Parameter(Mandatory=$true)]
         [ValidateNotNull()]
-        [ScriptBlock]$Script,
+        $Script,
+
+        [Parameter(Mandatory=$false)]
+        [AllowNull()]
+        $CmdArgs = $null,
 
         [Parameter(Mandatory=$false)]
         [ValidateNotNull()]
@@ -424,9 +428,9 @@ Function Invoke-Native
         $global:LASTEXITCODE = 0
         if ($NoRedirectStderr)
         {
-            & $Script | Out-String -Stream
+            & $Script $CmdArgs | Out-String -Stream
         } else {
-            & $Script 2>&1 | Out-String -Stream
+            & $Script $CmdArgs 2>&1 | Out-String -Stream
         }
         $exitCode = $global:LASTEXITCODE
 
