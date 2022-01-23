@@ -434,6 +434,9 @@ Function Invoke-Native
         }
         $exitCode = $global:LASTEXITCODE
 
+        # reset LASTEXITCODE
+        $global:LASTEXITCODE = 0
+
         Write-Verbose "Script exited with code: $exitCode"
         if (!$IgnoreExitCode -and $ValidExitCodes -notcontains $exitCode)
         {
