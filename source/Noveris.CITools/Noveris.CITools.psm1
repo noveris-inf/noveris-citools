@@ -84,6 +84,65 @@ Function Assert-SuccessExitCode
 	}
 }
 
+Function Set-CIStepDefinition
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNull()]
+        [HashTable]$ScopeSteps,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$StepName,
+
+        [Parameter(Mandatory=$false)]
+        [AllowNull()]
+        [ScriptBlock]$Script,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Dependencies,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$MergeDependencies = $false
+    )
+
+    process
+    {
+        # Add the step, if it doesn't exist
+        if ($scopeSteps.Keys -notcontains $StepName)
+        {
+            $ScopeSteps[$StepName] = [PSCustomObject]@{
+                Name = $StepName
+                Script = $null
+                Dependencies = New-Object 'System.Collections.Generic.HashSet[string]'
+            }
+        }
+
+        # Update the script, if specified
+        if ($PSBoundParameters.Keys -contains "Script")
+        {
+            $ScopeSteps[$StepName].Script = $Script
+        }
+
+        # Update the dependencies, if specified
+        if ($PSBoundParameters.Keys -contains "Dependencies")
+        {
+            # Clear the dependencies, if we're not merging
+            if (!$MergeDependencies)
+            {
+                $ScopeSteps[$StepName].Dependencies.Clear()
+            }
+
+            # Add the new dependencies
+            $Dependencies | ForEach-Object {
+                $ScopeSteps[$StepName].Dependencies.Add($_) | Out-Null
+            }
+        }
+    }
+}
+
 <#
 #>
 Function Invoke-CIProfile
@@ -129,31 +188,32 @@ Function Invoke-CIProfile
                 continue
             }
 
+            # Ensure the step is defined in scopeSteps
+            Set-CIStepDefinition -ScopeSteps $scopeSteps -StepName $stepName
+
             # Get the step associated with this name
             $step = [HashTable]($Steps[$stepName])
 
-            $newStep = [PSCustomObject]@{
-                Name = $stepName
-                Script = $null
-                Dependencies = $null
-            }
             # Validate Script, if it exists
             if ($step.Keys -contains "Script")
             {
-                $newStep.Script = [ScriptBlock]($step["Script"])
+                $stepScript = [ScriptBlock]($step["Script"])
+                Set-CIStepDefinition -ScopeSteps $scopeSteps -StepName $stepName -Script $stepScript
             }
 
             # Validate dependencies, if they exist
             if ($step.Keys -contains "Dependencies")
             {
-                $newStep.Dependencies = [string[]]($step["Dependencies"])
+                $stepDependencies = [string[]]($step["Dependencies"])
 
-                # Add the dependencies to the components list
-                $newStep.Dependencies | ForEach-Object { $components.Push($_) }
+                $stepDependencies | ForEach-Object {
+                    # Add the dependencies to the dependency map for this step
+                    Set-CIStepDefinition -ScopeSteps $scopeSteps -StepName $stepName -Dependencies $stepDependencies -MergeDependencies
+
+                    # Add the dependencies to the components list
+                    $components.Push($_)
+                }
             }
-
-            # Add the step to scopeSteps
-            $scopeSteps[$stepName] = $newStep
         }
 
         # Create an execution order
