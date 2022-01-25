@@ -86,6 +86,93 @@ Function Assert-SuccessExitCode
 
 <#
 #>
+Function Set-CIStepDefinition
+{
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNull()]
+        [HashTable]$ScopeSteps,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$StepName,
+
+        [Parameter(Mandatory=$false)]
+        [AllowNull()]
+        [ScriptBlock]$Script
+    )
+
+    process
+    {
+        # Add the step, if it doesn't exist
+        if ($scopeSteps.Keys -notcontains $StepName)
+        {
+            $ScopeSteps[$StepName] = [PSCustomObject]@{
+                Name = $StepName
+                Script = $null
+            }
+        }
+
+        # Update the script, if specified
+        if ($PSBoundParameters.Keys -contains "Script")
+        {
+            $ScopeSteps[$StepName].Script = $Script
+        }
+    }
+}
+
+<#
+#>
+Function Set-CIStepDependency
+{
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNull()]
+        [HashTable]$DependencyMap,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$StepName,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Dependencies,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$MergeDependencies = $false
+    )
+
+    process
+    {
+        # Add the step, if it doesn't exist
+        if ($DependencyMap.Keys -notcontains $StepName)
+        {
+            $DependencyMap[$StepName] = New-Object 'System.Collections.Generic.HashSet[string]'
+        }
+
+        # Update the dependencies, if specified
+        if ($PSBoundParameters.Keys -contains "Dependencies")
+        {
+            # Clear the dependencies, if we're not merging
+            if (!$MergeDependencies)
+            {
+                $DependencyMap[$StepName].Clear()
+            }
+
+            # Add the new dependencies
+            $Dependencies | ForEach-Object {
+                $DependencyMap[$StepName].Add($_) | Out-Null
+            }
+        }
+    }
+}
+
+<#
+#>
 Function Invoke-CIProfile
 {
     [CmdletBinding()]
@@ -103,8 +190,13 @@ Function Invoke-CIProfile
     {
         $components = New-Object 'System.Collections.Generic.Stack[string]'
 
-        # Find all of the steps that can be reached by the initial step (i.e. steps in scope)
+        # ScopeSteps represents the steps within scope and dependencies is a map
+        # of step names to dependent steps
         $scopeSteps = @{}
+        $dependencyMap = @{}
+
+        # Find all of the steps that can be reached by the initial step (i.e. steps in scope)
+        # and populate scopeSteps.
         $components.Push($Name)
         while ($components.Count -gt 0)
         {
@@ -129,36 +221,54 @@ Function Invoke-CIProfile
                 continue
             }
 
+            # Ensure the step is defined in scopeSteps
+            Set-CIStepDefinition -ScopeSteps $scopeSteps -StepName $stepName
+
             # Get the step associated with this name
             $step = [HashTable]($Steps[$stepName])
 
-            $newStep = [PSCustomObject]@{
-                Name = $stepName
-                Script = $null
-                Dependencies = $null
-            }
             # Validate Script, if it exists
             if ($step.Keys -contains "Script")
             {
-                $newStep.Script = [ScriptBlock]($step["Script"])
+                $stepScript = [ScriptBlock]($step["Script"])
+                Set-CIStepDefinition -ScopeSteps $scopeSteps -StepName $stepName -Script $stepScript
             }
 
             # Validate dependencies, if they exist
+            Set-CIStepDependency -DependencyMap $dependencyMap -StepName $stepName
             if ($step.Keys -contains "Dependencies")
             {
-                $newStep.Dependencies = [string[]]($step["Dependencies"])
+                $step["Dependencies"] | ForEach-Object {
+                    $dep = [string]$_
 
-                # Add the dependencies to the components list
-                $newStep.Dependencies | ForEach-Object { $components.Push($_) }
+                    if ([string]::IsNullOrEmpty($dep)) {
+                        return
+                    }
+
+                    # Use ":" to allow definition of a dependency chain with the current step dependent on
+                    # the last entry in the chain
+                    $split = $dep.Split(":")
+                    $current = $split[0]
+
+                    $components.Push($current)
+                    for ($i = 1; $i -lt $split.Length; $i++)
+                    {
+                        $previous = $current
+                        $current = $split[$i]
+
+                        $components.Push($current)
+                        Set-CIStepDependency -DependencyMap $dependencyMap -StepName $current -Dependencies $($previous) -MergeDependencies
+                    }
+
+                    Set-CIStepDependency -DependencyMap $dependencyMap -StepName $stepName -Dependencies $($current) -MergeDependencies
+                }
             }
-
-            # Add the step to scopeSteps
-            $scopeSteps[$stepName] = $newStep
         }
 
         # Create an execution order
         $processedNames = New-Object 'System.Collections.Generic.HashSet[string]'
         $executionOrder = New-Object 'System.Collections.Generic.List[PSCustomObject]'
+        Write-Verbose ("Dumping dependency map: " + ($dependencyMap | ConvertTo-Json))
         while ($scopeSteps.Count -gt 0)
         {
             # Find a step that has its dependencies met or has no dependencies
@@ -168,7 +278,12 @@ Function Invoke-CIProfile
                 $step = $scopeSteps[$key]
 
                 # Collect a list of blockers for this step
-                $blockers = $step.Dependencies | Where-Object {
+                if ($dependencyMap.Keys -notcontains $key)
+                {
+                    Write-Error "Missing dependencies for step: $key"
+                }
+
+                $blockers = $dependencyMap[$key] | Where-Object {
                     !$processedNames.Contains($_)
                 }
 
@@ -186,7 +301,10 @@ Function Invoke-CIProfile
             # If we couldn't find anything, abort
             if ($null -eq $candidate)
             {
-                Write-Error "Possible cyclical dependencies. Unable to determine execution order."
+                $msg = "Possible cyclical dependencies. Unable to determine execution order."
+                Write-Information $msg
+                Write-Information ("Dumping dependency map: " + ($dependencyMap | ConvertTo-Json))
+                Write-Error $msg
             }
 
             # Remove the step from the scope steps

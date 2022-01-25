@@ -13,25 +13,38 @@ Remove-Module Noveris.CITools -EA SilentlyContinue
 Import-Module .\Noveris.CITools\Noveris.CITools.psm1
 
 Invoke-CIProfile -Name $Name -Verbose -steps @{
+    lint = @{
+        Script = {
+            Write-Information "linting script"
+        }
+    }
+    clean = @{
+        Script = {
+            Write-Information "Clean script"
+        }
+    }
     build = @{
+        Dependencies = $("lint")
         Script = {
             Write-Information "build post script"
         }
     }
     release = @{
-        Dependencies = $("build")
         Script = {
             Write-Information "release post script"
         }
     }
     commit_release = @{
-        Dependencies = $("build", "release")
+        Dependencies = $(
+            "release",
+            "lint",
+            "clean:build:release")
         Script = {
             Write-Information "post release commit"
         }
     }
     pr = @{
-        Dependencies = $("build")
+        #Dependencies = $("build")
         Script = {
             Write-Information "pr post script"
         }
