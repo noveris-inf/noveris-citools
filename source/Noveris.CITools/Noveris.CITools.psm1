@@ -243,32 +243,22 @@ Function Invoke-CIProfile
                         return
                     }
 
-                    # The step we're going to update
-                    $target = $stepName
-
-                    # Use ":" to allow definition of a target step to apply the dependency to
-                    # Format -> "[target_dep:]dependency"
+                    # Use ":" to allow definition of a dependency chain with the current step dependent on
+                    # the last entry in the chain
                     $split = $dep.Split(":")
-                    switch ($split.Count)
+                    $current = $split[0]
+
+                    $components.Push($current)
+                    for ($i = 1; $i -lt $split.Length; $i++)
                     {
-                        1 {
-                            # target and dep are already correct
-                            $components.Push($dep)
-                            break
-                        }
-                        2 {
-                            $target = $split[0]
-                            $dep = $split[1]
+                        $previous = $current
+                        $current = $split[$i]
 
-                            $components.Push($split[0])
-                            $components.Push($split[1])
-
-                            break
-                        }
-                        default { Write-Error "Invalid number of components in dependency: $dep" }
+                        $components.Push($current)
+                        Set-CIStepDependencies -DependencyMap $dependencyMap -StepName $current -Dependencies $($previous) -MergeDependencies
                     }
 
-                    Set-CIStepDependencies -DependencyMap $dependencyMap -StepName $target -Dependencies $($dep) -MergeDependencies
+                    Set-CIStepDependencies -DependencyMap $dependencyMap -StepName $stepName -Dependencies $($current) -MergeDependencies
                 }
             }
         }
