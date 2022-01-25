@@ -88,6 +88,7 @@ Function Assert-SuccessExitCode
 #>
 Function Set-CIStepDefinition
 {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
@@ -124,8 +125,9 @@ Function Set-CIStepDefinition
 
 <#
 #>
-Function Set-CIStepDependencies
+Function Set-CIStepDependency
 {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
@@ -233,7 +235,7 @@ Function Invoke-CIProfile
             }
 
             # Validate dependencies, if they exist
-            Set-CIStepDependencies -DependencyMap $dependencyMap -StepName $stepName
+            Set-CIStepDependency -DependencyMap $dependencyMap -StepName $stepName
             if ($step.Keys -contains "Dependencies")
             {
                 $step["Dependencies"] | ForEach-Object {
@@ -255,10 +257,10 @@ Function Invoke-CIProfile
                         $current = $split[$i]
 
                         $components.Push($current)
-                        Set-CIStepDependencies -DependencyMap $dependencyMap -StepName $current -Dependencies $($previous) -MergeDependencies
+                        Set-CIStepDependency -DependencyMap $dependencyMap -StepName $current -Dependencies $($previous) -MergeDependencies
                     }
 
-                    Set-CIStepDependencies -DependencyMap $dependencyMap -StepName $stepName -Dependencies $($current) -MergeDependencies
+                    Set-CIStepDependency -DependencyMap $dependencyMap -StepName $stepName -Dependencies $($current) -MergeDependencies
                 }
             }
         }
