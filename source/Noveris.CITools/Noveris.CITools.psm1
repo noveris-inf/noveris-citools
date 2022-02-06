@@ -562,3 +562,117 @@ Function Invoke-Native
         }
     }
 }
+
+<#
+#>
+Function Invoke-EnvironmentPlaybook
+{
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [string]$BaseDirectory = "deploy",
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$EnvName,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateSet("diff", "apply")]
+        [string]$Action,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [string[]]$Inventories = $(),
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [string[]]$VaultFiles = $(),
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [string[]]$OtherArgs
+    )
+
+    process
+    {
+        Get-ChildItem $BaseDirectory |
+            Where-Object { $_.Attributes -like "*Directory*" -and $_.Name -match "^_exec_*" } |
+            Sort-Object -Property Name |
+            ForEach-Object {
+                Write-Information ("Found exec directory: " + $_.FullName)
+                Get-ChildItem $_.FullName |
+                    Where-Object { $_.Name -match "^_${Action}_${EnvName}_.*\.(yml|yaml)$"} |
+                    Sort-Object -Property Name |
+                    ForEach-Object {
+                        Write-Information ("Executing: " + $_.FullName)
+                        [string[]]$callArgs = $()
+
+                        # Add inventories
+                        if (($Inventories | Measure-Object).Count -gt 0)
+                        {
+                            $Inventories | ForEach-Object {
+                                $callArgs += "-i"
+                                $callArgs += $_
+                            }
+                        }
+
+                        # Add vaults
+                        if (($VaultFiles | Measure-Object).Count -gt 0)
+                        {
+                            $VaultFiles | ForEach-Object {
+                                $callArgs += "--vault-password-file"
+                                $callArgs += $_
+                            }
+                        }
+
+                        # Add Other Args
+                        if (($OtherArgs | Measure-Object).Count -gt 0)
+                        {
+                            $OtherArgs | ForEach-Object {
+                                $callArgs += $_
+                            }
+                        }
+
+                        $callArgs += $_.FullName
+
+                        Write-Information ("Invoking ansible-playbook with args: " + ($callArgs -join " "))
+                        Invoke-Native ansible-playbook -CmdArgs $callArgs
+                    }
+            }
+    }
+}
+
+<#
+#>
+Function Add-AZDEnvironmentPromotePR
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SourceBranch,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TargetBranch
+    )
+
+    process
+    {
+        Write-Information "Installing Azure Devops Extension"
+        Invoke-Native "az" @("extension", "add", "--name", "azure-devops") -EA Continue
+
+        Write-Information "PR creation"
+        $result = Invoke-Native "az" @("repos", "pr", "list", "-s", $SourceBranch, "-t", $TargetBranch)
+        if (($result | ConvertFrom-Json | Measure-Object).Count -eq 0)
+        {
+            Write-Information "No existing PR. Creating a new one."
+            Invoke-Native "az" @("repos", "pr", "create", "--source-branch", $SourceBranch, "--target-branch", $TargetBranch, "--title",
+                "'Promote from $SourceBranch to $TargetBranch'", "--detect")
+        } else {
+            Write-Information "PR already exists for source to target"
+        }
+    }
+}
