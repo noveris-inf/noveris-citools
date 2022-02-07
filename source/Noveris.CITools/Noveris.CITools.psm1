@@ -597,50 +597,64 @@ Function Invoke-EnvironmentPlaybook
 
     process
     {
-        Get-ChildItem $BaseDirectory |
+        $plays = Get-ChildItem $BaseDirectory |
             Where-Object { $_.Attributes -like "*Directory*" -and $_.Name -match "^_exec_*" } |
             Sort-Object -Property Name |
             ForEach-Object {
                 Write-Information ("Found exec directory: " + $_.FullName)
                 Get-ChildItem $_.FullName |
+                    Where-Object { $_.Name -match "^_${Action}_pre_.*\.(yml|yaml)$"} |
+                    Sort-Object -Property Name
+
+                Get-ChildItem $_.FullName |
                     Where-Object { $_.Name -match "^_${Action}_${EnvName}_.*\.(yml|yaml)$"} |
-                    Sort-Object -Property Name |
-                    ForEach-Object {
-                        Write-Information ("Executing: " + $_.FullName)
-                        [string[]]$callArgs = $()
+                    Sort-Object -Property Name
 
-                        # Add inventories
-                        if (($Inventories | Measure-Object).Count -gt 0)
-                        {
-                            $Inventories | ForEach-Object {
-                                $callArgs += "-i"
-                                $callArgs += $_
-                            }
-                        }
-
-                        # Add vaults
-                        if (($VaultFiles | Measure-Object).Count -gt 0)
-                        {
-                            $VaultFiles | ForEach-Object {
-                                $callArgs += "--vault-password-file"
-                                $callArgs += $_
-                            }
-                        }
-
-                        # Add Other Args
-                        if (($OtherArgs | Measure-Object).Count -gt 0)
-                        {
-                            $OtherArgs | ForEach-Object {
-                                $callArgs += $_
-                            }
-                        }
-
-                        $callArgs += $_.FullName
-
-                        Write-Information ("Invoking ansible-playbook with args: " + ($callArgs -join " "))
-                        Invoke-Native ansible-playbook -CmdArgs $callArgs
-                    }
+                Get-ChildItem $_.FullName |
+                    Where-Object { $_.Name -match "^_${Action}_post_.*\.(yml|yaml)$"} |
+                    Sort-Object -Property Name
             }
+
+        Write-Information ""
+        Write-Information "Plays to execute: "
+        $plays | ForEach-Object { Write-Information $_ }
+
+        $plays | ForEach-Object {
+            Write-Information ""
+            Write-Information ("Executing: " + $_.FullName)
+            [string[]]$callArgs = $()
+
+            # Add inventories
+            if (($Inventories | Measure-Object).Count -gt 0)
+            {
+                $Inventories | ForEach-Object {
+                    $callArgs += "-i"
+                    $callArgs += $_
+                }
+            }
+
+            # Add vaults
+            if (($VaultFiles | Measure-Object).Count -gt 0)
+            {
+                $VaultFiles | ForEach-Object {
+                    $callArgs += "--vault-password-file"
+                    $callArgs += $_
+                }
+            }
+
+            # Add Other Args
+            if (($OtherArgs | Measure-Object).Count -gt 0)
+            {
+                $OtherArgs | ForEach-Object {
+                    $callArgs += $_
+                }
+            }
+
+            $callArgs += $_.FullName
+
+            Write-Information ("Invoking ansible-playbook with args: " + ($callArgs -join " "))
+            Invoke-Native ansible-playbook -CmdArgs $callArgs
+        }
     }
 }
 
