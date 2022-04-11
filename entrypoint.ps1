@@ -100,7 +100,7 @@ Invoke-CIProfile -Name $Profile -Steps @{
         Dependencies = $("build")
         Script = {
             $owner = "archmachina"
-            $repo = "citools"
+            $repo = "ps-citools"
 
             $releaseParams = @{
                 Owner = $owner
