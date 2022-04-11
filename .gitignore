@@ -329,7 +329,7 @@ ASALocalRun/
 # MFractors (Xamarin productivity tool) working folder 
 .mfractor/
 
-source/Noveris.CITools/Noveris.CITools.psd1
+source/CITools/CITools.psd1
 
 package/
 

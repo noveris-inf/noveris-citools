@@ -1,4 +1,4 @@
-name: latest_main
+name: latest
 on:
   workflow_dispatch:
   push:
@@ -16,9 +16,7 @@ jobs:
         with:
           submodules: true
 
-      - name: latest_main
+      - name: latest
         shell: pwsh
         run: |
-          ./entrypoint.ps1 latest_main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ./entrypoint.ps1 latest

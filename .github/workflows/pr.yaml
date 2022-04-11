@@ -1,4 +1,4 @@
-name: pr_main
+name: pr
 on:
   push:
     branches-ignore:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   pr_main:
-    name: "pr_main"
+    name: "pr"
     runs-on: ubuntu-latest
 
     steps:
@@ -18,7 +18,7 @@ jobs:
         with:
           submodules: true
 
-      - name: pr_main
+      - name: pr
         shell: pwsh
         run: |
-          ./entrypoint.ps1 pr_main
+          ./entrypoint.ps1 pr

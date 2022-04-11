@@ -14,6 +14,324 @@ Set-StrictMode -Version 2
 ########
 # Script variables
 $script:BuildDirectories = New-Object 'System.Collections.Generic.HashSet[string]'
+$semVerPattern = "^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
+
+<#
+#>
+Function Get-BuildNumber {
+    [OutputType('System.Int64')]
+    [CmdletBinding()]
+    param(
+    )
+
+    process
+    {
+        $MinDate = New-Object DateTime -ArgumentList 1970, 1, 1
+        [Int64]([DateTime]::Now - $MinDate).TotalDays
+    }
+}
+
+<#
+#>
+Function Select-ValidVersions
+{
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true,ValueFromPipeline)]
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Source,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$First = $false,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$Required = $false
+    )
+
+    begin
+    {
+        $MatchFound = $false
+    }
+
+    process
+    {
+        if ([string]::IsNullOrEmpty($Source))
+        {
+            Write-Verbose "Null or empty version supplied"
+            return
+        }
+
+        if ($MatchFound -and $First)
+        {
+            Write-Verbose "Ignoring source ($Source) valid version already identified and -First specified"
+            return
+        }
+
+        Write-Verbose "Processing Version Source: ${Source}"
+        $working = $Source
+
+        # Strip any refs/tags/ reference at the beginning of the version source
+        $tagBranch = "refs/tags/"
+        if ($working.StartsWith($tagBranch))
+        {
+            Write-Verbose "Version starts with refs/tags format - Removing"
+            $working = $working.Substring($tagBranch.Length)
+        }
+
+        # Save a copy of the raw version, minus the leading refs/tags, if it existed, as the tag
+        $tag = $working
+
+        # Leading 'v' should be stripped for SemVer processing
+        if ($working.StartsWith("v"))
+        {
+            Write-Verbose "Version starts with 'v' - Removing"
+            $working = $working.Substring(1)
+        }
+
+        # Save a copy of this content as the full version, which is the tag, minus any leading 'v'
+        $fullVersion = $working
+
+        # Check if we match the semver regex pattern
+        # Regex used directly from semver.org
+        if ($working -notmatch $semVerPattern)
+        {
+            Write-Verbose "Version string not in correct format. skipping"
+            return
+        }
+
+        # Extract components of version string
+        $major = [Convert]::ToInt32($Matches[1])
+        $minor = [Convert]::ToInt32($Matches[2])
+        $patch = [Convert]::ToInt32($Matches[3])
+        $Prerelease = $Matches[4]
+        $Buildmetadata = $Matches[5]
+
+        # Make sure prerelease and buildmetadata are at least an empty string
+        if ($null -eq $Prerelease) {
+            $Prerelease = ""
+        }
+
+        if ($null -eq $Buildmetadata) {
+            $Buildmetadata = ""
+        }
+
+        # Check if we are a prerelease version
+        $IsPrerelease = $false
+        if (![string]::IsNullOrEmpty($Prerelease))
+        {
+            $IsPrerelease = $true
+        }
+
+        # Version is valid - Write to output stream
+        Write-Verbose "Version is valid"
+        $result = [PSCustomObject]@{
+            Raw = $Source
+            Tag = $tag
+            Major = $major
+            Minor = $minor
+            Patch = $patch
+            FullVersion = $fullVersion
+            Prerelease = $Prerelease
+            Buildmetadata = $Buildmetadata
+            BuildVersion = ("{0}.{1}.{2}.{3}" -f $major, $minor, $patch, (Get-BuildNumber))
+            AssemblyVersion = "${major}.0.0.0"
+            PlainVersion = ("{0}.{1}.{2}" -f $major, $minor, $patch)
+            IsPrerelease = $IsPrerelease
+        }
+
+        Write-Verbose ($result | ConvertTo-Json)
+        $result
+
+        $MatchFound = $true
+    }
+
+    end
+    {
+        if ($Required -and !$MatchFound)
+        {
+            # throw error as we didn't find a valid version source
+            Write-Error "Could not find a valid version source"
+        }
+    }
+}
+
+<#
+#>
+Function Format-RecordAsString
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true,ValueFromPipeline)]
+        $Input,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$DisplaySummary = $false,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$RethrowError = $false
+    )
+
+    begin
+    {
+        $errors = 0
+        $warnings = 0
+    }
+
+    process
+    {
+        $timestamp = [DateTime]::Now.ToString("yyyyMMdd HH:mm")
+
+        if ([System.Management.Automation.InformationRecord].IsAssignableFrom($_.GetType()))
+        {
+            ("{0} (INFO): {1}" -f $timestamp, $_.ToString())
+        }
+        elseif ([System.Management.Automation.VerboseRecord].IsAssignableFrom($_.GetType()))
+        {
+            ("{0} (VERBOSE): {1}" -f $timestamp, $_.ToString())
+        }
+        elseif ([System.Management.Automation.ErrorRecord].IsAssignableFrom($_.GetType()))
+        {
+            $errors++
+            ("{0} (ERROR): {1}" -f $timestamp, $_.ToString())
+            $Input | Out-String -Stream | ForEach-Object {
+                ("{0} (ERROR): {1}" -f $timestamp, $_.ToString())
+            }
+
+            if ($RethrowError)
+            {
+                throw $Input
+            }
+        }
+        elseif ([System.Management.Automation.DebugRecord].IsAssignableFrom($_.GetType()))
+        {
+            ("{0} (DEBUG): {1}" -f $timestamp, $_.ToString())
+        }
+        elseif ([System.Management.Automation.WarningRecord].IsAssignableFrom($_.GetType()))
+        {
+            $warnings++
+            ("{0} (WARNING): {1}" -f $timestamp, $_.ToString())
+        }
+        elseif ([string].IsAssignableFrom($_.GetType()))
+        {
+            ("{0} (INFO): {1}" -f $timestamp, $_.ToString())
+        }
+        else
+        {
+            # Don't do ToString() here as this breaks things like Format-Table that
+            # don't convert to string properly. Out-String (below) will handle this for us.
+            $Input
+        }
+    }
+
+    end
+    {
+        # Summarise the number of errors and warnings, if required
+        if ($DisplaySummary)
+        {
+            $timestamp = [DateTime]::Now.ToString("yyyyMMdd HH:mm")
+            ("{0} (INFO): Warnings: {1}" -f $timestamp, $warnings)
+            ("{0} (INFO): Errors: {1}" -f $timestamp, $errors)
+        }
+    }
+}
+
+<#
+#>
+Function Reset-LogFileState
+{
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$LogPath,
+
+        [Parameter(Mandatory=$false)]
+        [int]$PreserveCount = 5,
+
+        [Parameter(Mandatory=$false)]
+        [int]$RotateSizeKB = 0
+    )
+
+    process
+    {
+        # Check if the target is a directory
+        if (Test-Path -PathType Container $LogPath)
+        {
+            Write-Error "Target is a directory"
+        }
+
+        # Create the log file, if it doesn't exist
+        if (!(Test-Path $LogPath))
+        {
+            Write-Verbose "Log Path doesn't exist. Attempting to create."
+            if ($PSCmdlet.ShouldProcess($LogPath, "Create Log"))
+            {
+                New-Item -Type File $LogPath -EA SilentlyContinue | Out-Null
+            } else {
+                return
+            }
+        }
+
+        # Get the attributes of the target log file
+        $logInfo = Get-Item $LogPath
+        $logSize = ($logInfo.Length/1024)
+        Write-Verbose "Current log file size: $logSize KB"
+
+        # Check the size of the log file and rotate if greater than
+        # the desired maximum
+        if ($logSize -gt $RotateSizeKB)
+        {
+            Write-Verbose "Rotation required due to log size"
+            Write-Verbose "PreserveCount: $PreserveCount"
+
+            # Shuffle all of the logs along
+            [int]$count = $PreserveCount
+            while ($count -gt 0)
+            {
+                # If count is 1, we're working on the active log
+                if ($count -le 1)
+                {
+                    $source = $LogPath
+                } else {
+                    $source = ("{0}.{1}" -f $LogPath, ($count-1))
+                }
+                $destination = ("{0}.{1}" -f $LogPath, $count)
+
+                # Check if there is an actual log to move and rename
+                if (Test-Path -Path $source)
+                {
+                    Write-Verbose "Need to rotate $source"
+                    if ($PSCmdlet.ShouldProcess($source, "Rotate"))
+                    {
+                        Move-Item -Path $source -Destination $destination -Force
+                    }
+                }
+
+                $count--
+            }
+
+            # Create the log path, if it doesn't exist (i.e. was renamed/rotated)
+            if (!(Test-Path $LogPath))
+            {
+                if ($PSCmdlet.ShouldProcess($LogPath, "Create Log"))
+                {
+                    New-Item -Type File $LogPath -EA SilentlyContinue | Out-Null
+                } else {
+                    return
+                }
+            }
+
+            # Clear the content of the log path (only applies if no rotation was done
+            # due to 0 PreserveCount, but the log is over the RotateSizeKB maximum)
+            if ($PSCmdlet.ShouldProcess($LogPath, "Truncate"))
+            {
+                Clear-Content -Path $LogPath -Force
+            }
+        }
+    }
+}
 
 <#
 #>

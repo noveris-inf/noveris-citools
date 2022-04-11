@@ -10,6 +10,7 @@ param(
     [Parameter(Mandatory=$false)]
     [switch]$UseLocalTools = $false
 )
+
 ################
 # Global settings
 $InformationPreference = "Continue"
@@ -18,21 +19,22 @@ Set-StrictMode -Version 2
 
 ################
 # Modules
-Write-Information "Install/Update/Import Noveris.ModuleMgmt"
+Write-Information "Install/Update/Import ModuleMgmt"
 Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
-Remove-Module Noveris.ModuleMgmt -EA SilentlyContinue
-Install-Module Noveris.ModuleMgmt -Scope CurrentUser -EA SilentlyContinue
-Update-Module Noveris.ModuleMgmt -Scope CurrentUser -EA SilentlyContinue
-Import-Module Noveris.ModuleMgmt
+Remove-Module ModuleMgmt -EA SilentlyContinue
+Install-Module ModuleMgmt -Scope CurrentUser -EA SilentlyContinue
+Update-Module ModuleMgmt -Scope CurrentUser -EA SilentlyContinue
+Import-Module ModuleMgmt
 
-Write-Information "Install/Import Noveris.CITools"
-Remove-Module Noveris.CITools -EA SilentlyContinue
+Write-Information "Install/Import CITools"
+Remove-Module CITools -EA SilentlyContinue
 if ($UseLocalTools)
 {
-    Import-Module ./source/Noveris.CITools/Noveris.CITools.psm1
+    Import-Module ./source/CITools/CITools.psm1
 } else {
-    Import-Module -Name Noveris.CITools -RequiredVersion (Install-PSModuleWithSpec -Name Noveris.CITools -Major 0 -Minor 3)
+    Import-Module -Name CITools -RequiredVersion (Install-PSModuleWithSpec -Name CITools -Major 1 -Minor 0)
 }
+Import-Module -Name CITools -RequiredVersion (Install-PSModuleWithSpec -Name GitHubApiTools -Major 1 -Minor 0)
 
 ########
 # Capture version information
@@ -44,6 +46,7 @@ $version
 ########
 # Build stage
 Invoke-CIProfile -Name $Profile -Steps @{
+
     lint = @{
         Script = {
             Use-PowershellGallery
@@ -57,11 +60,12 @@ Invoke-CIProfile -Name $Profile -Steps @{
             }
         }
     }
+
     build = @{
         Script = {
             # Template PowerShell module definition
-            Write-Information "Templating Noveris.CITools.psd1"
-            Format-TemplateFile -Template source/Noveris.CITools.psd1.tpl -Target source/Noveris.CITools/Noveris.CITools.psd1 -Content @{
+            Write-Information "Templating CITools.psd1"
+            Format-TemplateFile -Template source/CITools.psd1.tpl -Target source/CITools/CITools.psd1 -Content @{
                 __FULLVERSION__ = $version.PlainVersion
             }
 
@@ -71,23 +75,26 @@ Invoke-CIProfile -Name $Profile -Steps @{
 
             # Install any dependencies for the module manifest
             Write-Information "Installing required dependencies from manifest"
-            Install-PSModuleFromManifest -ManifestPath source/Noveris.CITools/Noveris.CITools.psd1
+            Install-PSModuleFromManifest -ManifestPath source/CITools/CITools.psd1
 
             # Test the module manifest
             Write-Information "Testing module manifest"
-            Test-ModuleManifest source/Noveris.CITools/Noveris.CITools.psd1
+            Test-ModuleManifest source/CITools/CITools.psd1
 
             # Import modules as test
             Write-Information "Importing module"
-            Import-Module ./source/Noveris.CITools/Noveris.CITools.psm1
+            Import-Module ./source/CITools/CITools.psm1
         }
     }
-    pr_main = @{
+
+    pr = @{
         Dependencies = $("lint", "build")
     }
-    latest_main = @{
+
+    latest = @{
         Dependencies = $("lint", "build")
     }
+
     release = @{
         Dependencies = $("build")
         Script = {
@@ -107,7 +114,7 @@ Invoke-CIProfile -Name $Profile -Steps @{
             Write-Information "Creating release"
             New-GithubRelease @releaseParams
 
-            Publish-Module -Path ./source/Noveris.CITools -NuGetApiKey $Env:NUGET_API_KEY
+            Publish-Module -Path ./source/CITools -NuGetApiKey $Env:NUGET_API_KEY
         }
     }
 }
