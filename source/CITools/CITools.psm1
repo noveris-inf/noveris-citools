@@ -1,10 +1,6 @@
 <#
 #>
 
-#Requires -Modules @{"ModuleName"="Noveris.Logger";"RequiredVersion"="0.6.1"}
-#Requires -Modules @{"ModuleName"="Noveris.Version";"RequiredVersion"="0.5.2"}
-#Requires -Modules @{"ModuleName"="Noveris.GitHubApi";"RequiredVersion"="0.1.2"}
-
 ########
 # Global settings
 $InformationPreference = "Continue"
