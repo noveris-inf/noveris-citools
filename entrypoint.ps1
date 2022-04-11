@@ -34,7 +34,8 @@ if ($UseLocalTools)
 } else {
     Import-Module -Name CITools -RequiredVersion (Install-PSModuleWithSpec -Name CITools -Major 1 -Minor 0)
 }
-Import-Module -Name CITools -RequiredVersion (Install-PSModuleWithSpec -Name GitHubApiTools -Major 1 -Minor 0)
+
+Import-Module -Name GitHubApiTools -RequiredVersion (Install-PSModuleWithSpec -Name GitHubApiTools -Major 1 -Minor 0)
 
 ########
 # Capture version information
