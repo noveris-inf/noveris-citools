@@ -19,4 +19,4 @@ jobs:
       - name: latest
         shell: pwsh
         run: |
-          ./entrypoint.ps1 latest
+          ./entrypoint.ps1 -UseLocalTools latest

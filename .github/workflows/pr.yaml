@@ -21,4 +21,4 @@ jobs:
       - name: pr
         shell: pwsh
         run: |
-          ./entrypoint.ps1 pr
+          ./entrypoint.ps1 -UseLocalTools pr
