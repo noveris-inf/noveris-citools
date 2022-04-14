@@ -19,4 +19,4 @@ jobs:
       - name: linting
         shell: pwsh
         run: |
-          ./entrypoint.ps1 lint
+          ./entrypoint.ps1 -UseLocalTools lint
