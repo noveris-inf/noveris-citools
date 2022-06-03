@@ -13,61 +13,58 @@ Remove-Module CITools -EA SilentlyContinue
 Import-Module .\CITools\CITools.psm1
 
 Invoke-CIProfile -Name $Name -Verbose -steps @{
-    lint = @{
-        Script = {
+    lint = @(
+        {
             Write-Information "linting script"
         }
-    }
+    )
 
-    clean = @{
-        Script = {
+    clean = @(
+        {
             Write-Information "Clean script"
         }
-    }
+    )
 
-    build = @{
-        Dependencies = $("lint")
-        Script = {
+    build = @(
+        "lint",
+        {
             Write-Information "build post script"
         }
-    }
+    )
 
-    release = @{
-        Script = {
+    release = @(
+        {
             Write-Information "release post script"
         }
-    }
+    )
 
-    commit_release = @{
-        Dependencies = $(
-            "release",
-            "lint",
-            "clean:build:release")
-        Script = {
+    commit_release = @(
+        "lint",
+        @("clean", "build", "release", {
             Write-Information "post release commit"
-        }
-    }
+        })
+    )
 
-    pr = @{
-        #Dependencies = $("build")
-        Script = {
+    pr = @(
+        #"build",
+        {
             Write-Information "pr post script"
         }
-    }
+    )
 
-    error1 = @{
-        Dependencies = $("error2", "release")
-    }
+    error1 = @(
+        "error2",
+        "release"
+    )
 
-    error2 = @{
-        Dependencies = $("error1", "build", "release")
-    }
+    error2 = @(
+        "error1",
+        "build",
+        "release"
+    )
 
-    error3 = @{
-        Dependencies = $("missing")
-    }
+    error3 = @(
+        "missing"
+    )
 
-    error4 = @{
-        Script = "test"
-    }
 }
