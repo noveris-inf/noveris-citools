@@ -13,58 +13,86 @@ Remove-Module CITools -EA SilentlyContinue
 Import-Module .\CITools\CITools.psm1
 
 Invoke-CIProfile -Name $Name -Verbose -steps @{
-    lint = @(
-        {
+    lint = @{
+        Chain1 = {
             Write-Information "linting script"
         }
-    )
+    }
 
-    clean = @(
-        {
+    clean = @{
+        Chain1 = {
             Write-Information "Clean script"
         }
-    )
+    }
 
-    build = @(
-        "lint",
-        {
+    build = @{
+        Chain1 = "lint", {
             Write-Information "build post script"
         }
-    )
+    }
 
-    release = @(
-        {
+    build2 = @{
+        Chain1 = "lint", {
+            Write-Information "build post script"
+        }
+    }
+
+    release = @{
+        Chain1 = {
             Write-Information "release post script"
         }
-    )
+    }
 
-    commit_release = @(
-        "lint",
-        @("clean", "build", "release", {
+    commit_release = @{
+        Chain1 = "lint"
+        Chain2 = "clean", "build", "release", {
             Write-Information "post release commit"
-        })
-    )
+        }
+    }
 
-    pr = @(
+    pr = @{
         #"build",
-        {
+        Unordered = {
             Write-Information "pr post script"
         }
-    )
+    }
 
-    error1 = @(
-        "error2",
-        "release"
-    )
+    Base1 = @{
+        Chain1 = {
+            Write-Information "Base1"
+        }
+    }
 
-    error2 = @(
-        "error1",
-        "build",
-        "release"
-    )
+    Base2 = @{
+        Chain1 = {
+            Write-Information "Base2"
+        }
+    }
 
-    error3 = @(
-        "missing"
-    )
+    Base3 = @{
+        Chain1 = {
+            Write-Information "Base3"
+        }
+    }
 
+    BaseCall = @{
+        Chain1 = "Base1", {
+            Write-Information "BaseCall1"
+        }, "Base2"
+        Chain2 = "Base1", {
+            Write-Information "BaseCall2"
+        }, "Base3"
+    }
+
+    error1 = @{
+        Unordered = "error2", "release"
+    }
+
+    error2 = @{
+        Unordered = "error1", "build", "release"
+    }
+
+    error3 = @{
+        Unordered = "missing"
+    }
 }
