@@ -14,60 +14,85 @@ Import-Module .\CITools\CITools.psm1
 
 Invoke-CIProfile -Name $Name -Verbose -steps @{
     lint = @{
-        Script = {
+        Chain1 = {
             Write-Information "linting script"
         }
     }
 
     clean = @{
-        Script = {
+        Chain1 = {
             Write-Information "Clean script"
         }
     }
 
     build = @{
-        Dependencies = $("lint")
-        Script = {
+        Chain1 = "lint", {
+            Write-Information "build post script"
+        }
+    }
+
+    build2 = @{
+        Chain1 = "lint", {
             Write-Information "build post script"
         }
     }
 
     release = @{
-        Script = {
+        Chain1 = {
             Write-Information "release post script"
         }
     }
 
     commit_release = @{
-        Dependencies = $(
-            "release",
-            "lint",
-            "clean:build:release")
-        Script = {
+        Chain1 = "lint"
+        Chain2 = "clean", "build", "release", {
             Write-Information "post release commit"
         }
     }
 
     pr = @{
-        #Dependencies = $("build")
-        Script = {
+        #"build",
+        Unordered = {
             Write-Information "pr post script"
         }
     }
 
+    Base1 = @{
+        Chain1 = {
+            Write-Information "Base1"
+        }
+    }
+
+    Base2 = @{
+        Chain1 = {
+            Write-Information "Base2"
+        }
+    }
+
+    Base3 = @{
+        Chain1 = {
+            Write-Information "Base3"
+        }
+    }
+
+    BaseCall = @{
+        Chain1 = "Base1", {
+            Write-Information "BaseCall1"
+        }, "Base2"
+        Chain2 = "Base1", {
+            Write-Information "BaseCall2"
+        }, "Base3"
+    }
+
     error1 = @{
-        Dependencies = $("error2", "release")
+        Unordered = "error2", "release"
     }
 
     error2 = @{
-        Dependencies = $("error1", "build", "release")
+        Unordered = "error1", "build", "release"
     }
 
     error3 = @{
-        Dependencies = $("missing")
-    }
-
-    error4 = @{
-        Script = "test"
+        Unordered = "missing"
     }
 }
