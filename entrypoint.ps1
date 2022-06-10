@@ -32,7 +32,7 @@ if ($UseLocalTools)
 {
     Import-Module ./source/CITools/CITools.psm1
 } else {
-    Import-Module -Name CITools -RequiredVersion (Install-PSModuleWithSpec -Name CITools -Major 1 -Minor 0)
+    Import-Module -Name CITools -RequiredVersion (Install-PSModuleWithSpec -Name CITools -Major 2 -Minor 0)
 }
 
 Import-Module -Name GitHubApiTools -RequiredVersion (Install-PSModuleWithSpec -Name GitHubApiTools -Major 1 -Minor 0)
@@ -49,7 +49,7 @@ $version
 Invoke-CIProfile -Name $Profile -Steps @{
 
     lint = @{
-        Script = {
+        Steps = {
             Use-PowershellGallery
             Install-Module PSScriptAnalyzer -Scope CurrentUser
             Import-Module PSScriptAnalyzer
@@ -63,7 +63,7 @@ Invoke-CIProfile -Name $Profile -Steps @{
     }
 
     build = @{
-        Script = {
+        Steps = {
             # Template PowerShell module definition
             Write-Information "Templating CITools.psd1"
             Format-TemplateFile -Template source/CITools.psd1.tpl -Target source/CITools/CITools.psd1 -Content @{
@@ -89,16 +89,15 @@ Invoke-CIProfile -Name $Profile -Steps @{
     }
 
     pr = @{
-        Dependencies = $("build")
+        Steps = "build"
     }
 
     latest = @{
-        Dependencies = $("build")
+        Steps = "build"
     }
 
     release = @{
-        Dependencies = $("build")
-        Script = {
+        Steps = "build", {
             $owner = "archmachina"
             $repo = "ps-citools"
 
