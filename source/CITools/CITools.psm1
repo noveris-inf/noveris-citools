@@ -1026,3 +1026,301 @@ Function Add-AZDEnvironmentPromotePR
         }
     }
 }
+
+<#
+#>
+Function ConvertTo-DecryptedStringv1
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Value,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Password
+    )
+
+    process
+    {
+        # Value must be composed of two parts, metadata and the content,
+        # separated by a '.'
+        $valueParts = $Value.Split(".")
+
+        # Check that we have the two parts
+        if (($valueParts | Measure-Object).Count -ne 3)
+        {
+            Write-Error "Value must be composed of version, metadata and content, separated by periods"
+        }
+
+        # Check the version
+        $version = $valueParts[0]
+
+        if ($version -ne "v1")
+        {
+            Write-Error "Invalid version in string. Expected `"v1`", received `"$version`""
+        }
+
+        # Decode the metadata
+        $metadata = [System.Text.Encoding]::UTF8.GetString(([System.Convert]::FromBase64String($valueParts[1]))) | ConvertFrom-Json
+
+        # Read the IV
+        $ivBytes = [System.Convert]::FromBase64String($metadata.iv)
+        $ivLength = ($ivBytes | Measure-Object).Count
+
+        if ($ivLength -gt 256)
+        {
+            Write-Error "IV byte length too large: $ivLength"
+        }
+
+        # Read the salt
+        $saltBytes = [System.Convert]::FromBase64String($metadata.salt)
+        $saltLength = ($saltBytes | Measure-Object).Count
+
+        if ($saltLength -gt 256)
+        {
+            Write-Error "Salt byte length too large: $saltLength"
+        }
+
+        # Read the iterations
+        $iterations = [int]$metadata.iter
+
+        # Read the data
+        $dataBytes = [System.Convert]::FromBase64String($valueParts[2])
+
+        # Generate a key from the password
+        $passBytes = [System.Text.Encoding]::UTF8.GetBytes($Password)
+        $derive = [System.Security.Cryptography.Rfc2898DeriveBytes]::New($passBytes, $saltBytes, $iterations)
+
+        $aes = $null
+        $cryptoStream = $null
+        $stream = $null
+        try {
+            # Create the AES object
+            $aes = [System.Security.Cryptography.Aes]::Create()
+
+            # Configure the AES key and IV
+            $aes.Key = $derive.GetBytes(32)
+            $aes.IV = $ivBytes
+
+            # Memory stream for storing result data
+            $stream = New-Object 'System.IO.MemoryStream'
+
+            # Create a CryptoStream to write encrypted data to
+            $cryptoStream = [System.Security.Cryptography.CryptoStream]::New($stream, $aes.CreateDecryptor(),
+                [System.Security.Cryptography.CryptoStreamMode]::Write)
+
+            # Write the remainder of the content to the crypto stream
+            $cryptoStream.Write($dataBytes, 0, $dataBytes.Length)
+            $cryptoStream.FlushFinalBlock()
+
+            # Generate a base64 representation of the bytes
+            $payload = [System.Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
+            $value = [System.Text.Encoding]::UTF8.GetString(([System.Convert]::FromBase64String($payload.Value)))
+
+            $cryptoStream.Close()
+            $stream.Close()
+
+            # Pass output back
+            $value
+        } finally {
+            if ($null -ne $cryptoStream)
+            {
+                $cryptoStream.Dispose()
+            }
+
+            if ($null -ne $stream)
+            {
+                $stream.Dispose()
+            }
+
+            if ($null -ne $aes)
+            {
+                $aes.Dispose()
+            }
+        }
+    }
+}
+
+<#
+#>
+Function ConvertTo-EncryptedStringv1
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Value,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Password,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [int]$Iterations = 10000
+    )
+
+    process
+    {
+        # Create the metadata object for the encrypted string
+        $metadata = [PSCustomObject]@{
+            salt = $null
+            iv = $null
+            iter = $Iterations
+        }
+
+        # Generate a salt to use
+        $rng = $null
+        $saltBytes = [byte[]]::New(8)
+        try {
+            $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::New()
+            $rng.GetBytes($saltBytes)
+            $metadata.salt = [System.Convert]::ToBase64String($saltBytes)
+        } finally{
+            if ($null -ne $rng)
+            {
+                $rng.Dispose()
+            }
+        }
+
+        # Generate a key from the password
+        $passBytes = [System.Text.Encoding]::UTF8.GetBytes($Password)
+        $derive = [System.Security.Cryptography.Rfc2898DeriveBytes]::New($passBytes, $saltBytes, $Iterations)
+
+        # Encrypt and generate base64 output
+        $aes = $null
+        $stream = $null
+        $cryptoStream = $null
+        $encValueBase64 = $null
+        try {
+            # Create the AES object
+            $aes = [System.Security.Cryptography.Aes]::Create()
+
+            # Configure the AES key
+            $aes.Key = $derive.GetBytes(32)
+
+            # Save the initialisation vector
+            $metadata.iv = [System.Convert]::ToBase64String($aes.IV)
+
+            # Memory stream for storing encrypted data
+            $stream = New-Object 'System.IO.MemoryStream'
+
+            # Create a CryptoStream to write to the memory stream
+            $cryptoStream = [System.Security.Cryptography.CryptoStream]::New($stream, $aes.CreateEncryptor(),
+                [System.Security.Cryptography.CryptoStreamMode]::Write)
+
+            # Write the value to the crypto stream, wrapped in json
+            $valueBase64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Value))
+            $payloadBytes = [System.Text.Encoding]::UTF8.GetBytes(([PSCustomObject]@{ Value = $valueBase64 } | ConvertTo-Json))
+
+            $cryptoStream.Write($payloadBytes, 0, $payloadBytes.Length)
+            $cryptoStream.FlushFinalBlock()
+
+            # Generate a base64 representation of the bytes
+            $encValueBase64 = [System.Convert]::ToBase64String($stream.ToArray())
+            $cryptoStream.Close()
+            $stream.Close()
+        } finally {
+            if ($null -ne $cryptoStream)
+            {
+                $cryptoStream.Dispose()
+            }
+
+            if ($null -ne $stream)
+            {
+                $stream.Dispose()
+            }
+
+            if ($null -ne $aes)
+            {
+                $aes.Dispose()
+            }
+        }
+
+        # Generate Base64 version of metadata
+        $metadataBase64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(($metadata | ConvertTo-Json)))
+
+        # Output whole value
+        "v1.{0}.{1}" -f $metadataBase64, $encValueBase64
+    }
+}
+
+<#
+#>
+Function ConvertTo-DecryptedString
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Value,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Password
+    )
+
+    process
+    {
+        # Find the version for the incoming value
+        $version = $Value.Split(".")[0]
+
+        switch ($version)
+        {
+            "v1" {
+                ConvertTo-DecryptedStringv1 -Value $Value -Password $Password
+            }
+
+            default {
+                Write-Error "Unknown version: $version"
+            }
+        }
+    }
+}
+
+
+<#
+#>
+Function ConvertTo-EncryptedString
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Value,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Password,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [int]$Iterations = 10000,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [ValidateSet("v1")]
+        [string]$Version = "v1"
+    )
+
+    begin
+    {
+        Write-Verbose "Encrypting with version: $Version"
+    }
+
+    process
+    {
+        switch ($Version)
+        {
+            "v1" {
+                ConvertTo-EncryptedStringv1 -Value $Value -Password $Password -Iterations $Iterations
+            }
+
+            default {
+                Write-Error "Unknown version: $Version"
+            }
+        }
+    }
+}
