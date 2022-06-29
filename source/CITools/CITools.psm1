@@ -1026,3 +1026,49 @@ Function Add-AZDEnvironmentPromotePR
         }
     }
 }
+
+<#
+#>
+Function Convert-StringToBase64
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Value,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [ValidateSet("Default", "ASCII", "UTF8", "Unicode", "UTF7", "UTF32")]
+        [string]$Encoding = "Default"
+    )
+
+    process
+    {
+        $bytes = ([System.Text.Encoding]::$Encoding).GetBytes($Value)
+        [System.Convert]::ToBase64String($bytes)
+    }
+}
+
+<#
+#>
+Function Convert-Base64ToString
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Value,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [ValidateSet("Default", "ASCII", "UTF8", "Unicode", "UTF7", "UTF32")]
+        [string]$Encoding = "Default"
+    )
+
+    process
+    {
+        $bytes = [System.Convert]::FromBase64String($Value)
+        ([System.Text.Encoding]::$Encoding).GetString($bytes)
+    }
+}

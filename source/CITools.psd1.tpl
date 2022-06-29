@@ -86,7 +86,9 @@
         'Format-RecordAsString',
         'Reset-LogFileState',
         'Get-BuildNumber',
-        'Select-ValidVersions'
+        'Select-ValidVersions',
+        'Convert-Base64ToString',
+        'Convert-StringToBase64'
     )
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
