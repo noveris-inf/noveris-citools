@@ -901,6 +901,98 @@ Function Invoke-Native
 
 <#
 #>
+Function Invoke-DeploymentPlaybook
+{
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [string]$BaseDirectory = "deploy",
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [string[]]$Inventories = @(),
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [string[]]$VaultFiles = @(),
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [HashTable]$Vars = @{},
+
+        [Parameter(Mandatory=$false)]
+        [ValidateNotNull()]
+        [string[]]$OtherArgs
+    )
+
+    process
+    {
+        $plays = Get-ChildItem $BaseDirectory |
+            Where-Object { $_.Attributes -like "*Directory*" -and $_.Name -match "^_exec_*" } |
+            Sort-Object -Property Name |
+            ForEach-Object {
+                Write-Information ("Found exec directory: " + $_.FullName)
+                Get-ChildItem $_.FullName |
+                    Where-Object { $_.Name -match "^_exec_.*\.(yml|yaml)$"} |
+                    Sort-Object -Property Name
+            }
+
+        Write-Information ""
+        Write-Information "Plays to execute: "
+        $plays | ForEach-Object { Write-Information $_ }
+
+        # Arguments for playbook calls
+        $baseArgs = New-Object 'System.Collections.Generic.LinkedList[string]'
+
+        # Add inventories
+        if (($Inventories | Measure-Object).Count -gt 0)
+        {
+            $Inventories | ForEach-Object {
+                $baseArgs.Add("-i")
+                $baseArgs.Add($_)
+            }
+        }
+
+        # Add vaults
+        if (($VaultFiles | Measure-Object).Count -gt 0)
+        {
+            $VaultFiles | ForEach-Object {
+                $baseArgs.Add("--vault-password-file")
+                $baseArgs.Add($_)
+            }
+        }
+
+        # Add Vars
+        $Vars.Keys | ForEach-Object {
+            $baseArgs.Add("-e")
+            $baseArgs.Add(("{0}={1}" -f $_, $Vars[$_]))
+        }
+
+        # Add Other Args
+        if (($OtherArgs | Measure-Object).Count -gt 0)
+        {
+            $OtherArgs | ForEach-Object {
+                $baseArgs.Add($_)
+            }
+        }
+
+        $plays | ForEach-Object {
+            Write-Information ""
+            Write-Information ("Executing: " + $_.FullName)
+
+            $callArgs = $baseArgs.Clone()
+            $callArgs += $_.FullName
+
+            Write-Information ("Invoking ansible-playbook with args: " + ($callArgs -join " "))
+            Invoke-Native ansible-playbook -CmdArgs $callArgs
+        }
+    }
+}
+
+<#
+#>
 Function Invoke-EnvironmentPlaybook
 {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '')]

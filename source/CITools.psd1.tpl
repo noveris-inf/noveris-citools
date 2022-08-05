@@ -81,6 +81,7 @@
         'Clear-BuildDirectories',
         'Get-BuildDirectories',
         'Invoke-Native',
+        'Invoke-DeploymentPlaybook',
         'Invoke-EnvironmentPlaybook',
         'Add-AZDEnvironmentPromotePR',
         'Format-RecordAsString',
